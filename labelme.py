@@ -24,6 +24,9 @@ import re
 import sys
 import subprocess
 
+from glob import glob as glob
+import os.path
+
 from functools import partial
 from collections import defaultdict
 
@@ -305,6 +308,7 @@ class MainWindow(QMainWindow, WindowMixin):
         # Application state.
         self.image = QImage()
         self.filename = filename
+        self.imgFileName = None
         self.recentFiles = []
         self.maxRecent = 7
         self.lineColor = None
@@ -423,6 +427,7 @@ class MainWindow(QMainWindow, WindowMixin):
         self.filename = None
         self.imageData = None
         self.labelFile = None
+        self.imgFileName = None
         self.canvas.resetState()
 
     def currentItem(self):
@@ -560,8 +565,8 @@ class MainWindow(QMainWindow, WindowMixin):
 
         shapes = [format_shape(shape) for shape in self.canvas.shapes]
         try:
-            lf.save(filename, shapes, unicode(self.filename), self.imageData,
-                self.lineColor.getRgb(), self.fillColor.getRgb())
+            lf.save(filename, shapes, unicode(self.imgFileName), self.imageData,
+                    self.lineColor.getRgb(), self.fillColor.getRgb())
             self.labelFile = lf
             self.filename = filename
             return True
@@ -661,19 +666,35 @@ class MainWindow(QMainWindow, WindowMixin):
                             % (e, filename))
                     self.status("Error reading %s" % filename)
                     return False
-                self.imageData = self.labelFile.imageData
+
+                # read image with same basename (see openFile for formats)
+                self.imgFileName = self.labelFile.imagePath
+                self.imageData = read(self.imgFileName, None)
+                if not self.imageData:
+                    self.imgFileName = self._findAssocImage(filename)
+                    self.imageData = read(self.imgFileName, None)
+                if not self.imageData:
+                    self.imgFileName = None
+
+                # self.imageData = self.labelFile.imageData
                 self.lineColor = QColor(*self.labelFile.lineColor)
                 self.fillColor = QColor(*self.labelFile.fillColor)
             else:
                 # Load image:
                 # read data first and store for saving into label file.
-                self.imageData = read(filename, None)
-                self.labelFile = None
+                self.imgFileName = filename
+                self.imageData = read(self.imgFileName, None)
+                lfname = self._findAssocLabel(filename)
+                if lfname:
+                    self.labelFile = LabelFile(lfname)
+                else:
+                    self.labelFile = None
             image = QImage.fromData(self.imageData)
             if image.isNull():
                 self.errorMessage(u'Error opening file',
-                        u"<p>Make sure <i>%s</i> is a valid image file." % filename)
-                self.status("Error reading %s" % filename)
+                        u"<p>Make sure <i>%s</i> is a valid image file." % self.imgFileName)
+                self.status("Error reading %s" % self.imgFileName)
+                self.imgFileName = None
                 return False
             self.status("Loaded %s" % os.path.basename(unicode(filename)))
             self.image = image
@@ -689,6 +710,30 @@ class MainWindow(QMainWindow, WindowMixin):
             self.toggleActions(True)
             return True
         return False
+
+    def _findAssocImage(self, filename):
+        formats = ['%s' % unicode(fmt).lower()\
+                      for fmt in QImageReader.supportedImageFormats()]
+        formats.extend(['%s' % unicode(fmt).upper()\
+                      for fmt in QImageReader.supportedImageFormats()])
+        base, _ext = os.path.splitext(filename)
+        # Find candidates
+        candidates = []
+        for ext in formats:
+            candidates.extend(glob("%s.%s" % (base, ext)))
+        # Keep only best
+        if len(candidates) > 0:
+            return candidates[0]
+        return None
+
+    def _findAssocLabel(self, filename):
+        base, _ext = os.path.splitext(filename)
+        # Find candidates
+        candidates = glob("%s.%s" % (base, LabelFile.suffix[1:]))
+        # Keep only if not ambiguous
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
 
     def resizeEvent(self, event):
         if self.canvas and not self.image.isNull()\
@@ -762,7 +807,13 @@ class MainWindow(QMainWindow, WindowMixin):
         assert not self.image.isNull(), "cannot save empty image"
         if self.hasLabels():
             self._saveFile(self.filename if self.labelFile\
-                                         else self.saveFileDialog())
+                                         else self._imgFile2labelFile(self.filename)) # save in same dir
+                                         # else self.saveFileDialog())
+
+    def _imgFile2labelFile(self, filename):
+        base, _ext = os.path.splitext(filename)
+        return "%s%s" % (base, LabelFile.suffix)
+
 
     def saveFileAs(self, _value=False):
         assert not self.image.isNull(), "cannot save empty image"
