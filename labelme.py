@@ -703,7 +703,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     imgFilename = self._findAssocImage(filename)
             else:
                 lblsFilename = self._findAssocLabel(filename)
-                if lblsFilename:
+                if QFile.exists(lblsFilename):
                     # Load labels:
                     if not self._loadLabelFile(lblsFilename):
                         return False
