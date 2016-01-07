@@ -24,8 +24,6 @@ import re
 import sys
 import subprocess
 
-import os.path
-
 from functools import partial
 from collections import defaultdict
 
@@ -851,6 +849,7 @@ class MainWindow(QMainWindow, WindowMixin):
         if filename and self.saveLabels(filename):
             self.addRecentFile(filename)
             self.setClean()
+            # TODO self.callSaveHook(self, filename)?
 
     def closeFile(self, _value=False):
         if not self.mayContinue():
